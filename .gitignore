@@ -1,0 +1,8 @@
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.vib-code/
+.vib-code-config.json
+vib_code/vib-code-share-*.json
