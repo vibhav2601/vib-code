@@ -36,12 +36,12 @@ def print_agent_event(message: str) -> None:
     print(f"[agent] {message}")
 
 
-def print_tool_output(action: str, stdout: str = "", stderr: str = "", max_chars: int | None = 800) -> None:
+def print_tool_output(action: str, stdout: str = "", stderr: str = "", max_lines: int | None = 5) -> None:
     if stdout:
-        preview = stdout if max_chars is None else _truncate(stdout, max_chars=max_chars)
+        preview = stdout if max_lines is None else _truncate_lines(stdout, max_lines=max_lines)
         print(f"[tool:{action}:stdout]\n{preview}")
     if stderr:
-        preview = stderr if max_chars is None else _truncate(stderr, max_chars=max_chars)
+        preview = stderr if max_lines is None else _truncate_lines(stderr, max_lines=max_lines)
         print(f"[tool:{action}:stderr]\n{preview}")
 
 
@@ -57,6 +57,15 @@ def _truncate(text: str, max_chars: int) -> str:
         return text
     remaining = len(text) - max_chars
     return text[:max_chars] + f"\n... truncated {remaining} more characters"
+
+
+def _truncate_lines(text: str, max_lines: int) -> str:
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text
+    remaining = len(lines) - max_lines
+    kept = "\n".join(lines[:max_lines])
+    return kept + f"\n... truncated {remaining} more lines"
 
 
 def format_trace(trace_text: str) -> str:

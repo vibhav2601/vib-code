@@ -235,7 +235,7 @@ class AgentLoop:
                 action.action,
                 stdout=tool_result.stdout,
                 stderr=tool_result.stderr,
-                max_chars=None if action.action == "read_file" else 800,
+                max_lines=None if action.action == "read_file" else 5,
             )
             trace.append(
                 session.session_id,

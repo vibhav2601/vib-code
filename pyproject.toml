@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vib-code"
 version = "0.1.0"
-description = "Local terminal harness for Qwen via Ollama."
+description = "Local terminal coding harness with structured tool use for Ollama and OpenAI."
 requires-python = ">=3.11"
 
 [project.scripts]
