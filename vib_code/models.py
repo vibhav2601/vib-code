@@ -34,6 +34,7 @@ class SessionRecord:
 class Config:
     provider: str
     model: str
+    context_window_tokens: int
     ollama_host: str
     openai_base_url: str
     openai_api_key: str

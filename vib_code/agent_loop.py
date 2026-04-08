@@ -25,9 +25,9 @@ from .trace import TraceWriter
 from .tool_executor import execute_action
 
 
-SUMMARY_REFRESH_EVERY_USER_TURNS = 7
-MAX_STEPS_PER_TURN = 50
+MAX_STEPS_PER_TURN = 60
 RUNTIME_TOOL_CONTEXT_LIMIT = 8
+SUMMARY_RECENT_MESSAGE_KEEP = 8
 
 
 class AgentLoop:
@@ -97,8 +97,7 @@ class AgentLoop:
                 if blocked_mode
                 else action_schema(provider=self.config.provider)
             )
-            messages = build_chat_messages(
-                self.config,
+            messages = self._build_messages_for_request(
                 session,
                 runtime_state=runtime_state,
                 blocked_mode=blocked_mode,
@@ -416,28 +415,75 @@ class AgentLoop:
         assistant_output: str,
         tool_transcript: list[dict[str, Any]],
     ) -> None:
-        user_turn_count = sum(1 for message in session.messages if message.role == "user")
-        if user_turn_count % SUMMARY_REFRESH_EVERY_USER_TURNS != 0:
+        if not self._summary_refresh_needed(session):
             return
 
-        older_messages = session.messages[:-6]
-        if not session.summary and len(older_messages) < 4 and not tool_transcript:
-            return
+        latest_turn = {
+            "user": user_input,
+            "assistant": assistant_output,
+            "tool_results": tool_transcript[-4:],
+        }
+        self._refresh_summary(session, latest_turn=latest_turn)
+
+    def _build_messages_for_request(
+        self,
+        session: SessionRecord,
+        *,
+        runtime_state: dict[str, object] | None,
+        blocked_mode: bool,
+    ) -> list[dict[str, str]]:
+        messages = build_chat_messages(
+            self.config,
+            session,
+            runtime_state=runtime_state,
+            blocked_mode=blocked_mode,
+        )
+        if self._estimate_chat_messages_tokens(messages) <= self.config.context_window_tokens:
+            return messages
+
+        print_agent_event("context window exceeded: refreshing summary before request")
+        if self._refresh_summary(session):
+            messages = build_chat_messages(
+                self.config,
+                session,
+                runtime_state=runtime_state,
+                blocked_mode=blocked_mode,
+            )
+        return messages
+
+    def _summary_refresh_needed(self, session: SessionRecord) -> bool:
+        messages = build_chat_messages(self.config, session)
+        return self._estimate_chat_messages_tokens(messages) > self.config.context_window_tokens
+
+    def _refresh_summary(
+        self,
+        session: SessionRecord,
+        *,
+        latest_turn: dict[str, Any] | None = None,
+    ) -> bool:
+        older_messages = session.messages[:-SUMMARY_RECENT_MESSAGE_KEEP]
+        if not older_messages:
+            return False
 
         transcript_lines = []
-        for message in older_messages[-8:]:
+        for message in older_messages[-SUMMARY_RECENT_MESSAGE_KEEP:]:
             content = " ".join(message.content.split())
             transcript_lines.append(f"{message.role}: {content[:240]}")
 
         payload = {
             "existing_summary": session.summary,
             "older_messages": transcript_lines,
-            "latest_turn": {
-                "user": user_input,
-                "assistant": assistant_output,
-                "tool_results": tool_transcript[-4:],
-            },
         }
+        if latest_turn is not None:
+            payload["latest_turn"] = latest_turn
+        else:
+            payload["recent_messages"] = [
+                {
+                    "role": message.role,
+                    "content": " ".join(message.content.split())[:240],
+                }
+                for message in session.messages[-SUMMARY_RECENT_MESSAGE_KEEP:]
+            ]
         messages = [
             {
                 "role": "system",
@@ -468,16 +514,26 @@ class AgentLoop:
                 "content": "Session summary update payload:\n" + _json_dump(payload),
             },
         ]
+        previous_summary = session.summary
         try:
             result = self.client.chat(messages)
         except RuntimeError:
             if transcript_lines:
                 session.summary = "\n".join(transcript_lines[-4:])
-            return
+            return session.summary != previous_summary
 
         summary = result.content.strip()
         if summary:
-            session.summary = _sanitize_summary(summary, tool_transcript)
+            session.summary = _sanitize_summary(summary, latest_turn["tool_results"] if latest_turn is not None else [])
+        return session.summary != previous_summary
+
+    def _estimate_chat_messages_tokens(self, messages: list[dict[str, str]]) -> int:
+        total = 2
+        for message in messages:
+            total += 4
+            total += _estimate_string_tokens(str(message.get("role", "")))
+            total += _estimate_string_tokens(str(message.get("content", "")))
+        return total
 
     def _trace(self, session: SessionRecord) -> TraceWriter:
         return TraceWriter(Path(session.trace_path))
@@ -729,6 +785,12 @@ def _json_dump(payload: object) -> str:
     import json
 
     return json.dumps(payload, indent=2, ensure_ascii=True)
+
+
+def _estimate_string_tokens(text: str) -> int:
+    if not text:
+        return 0
+    return max(1, (len(text) + 3) // 4)
 
 
 def _analyze_turn_goal(user_input: str) -> dict[str, bool]:
