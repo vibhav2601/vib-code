@@ -30,27 +30,10 @@ ALLOWED_ACTIONS = {
 def _load_action_payload(text: str) -> object:
     decoder = json.JSONDecoder()
     try:
-        payload, end = decoder.raw_decode(text)
+        payload, _ = decoder.raw_decode(text)
     except json.JSONDecodeError as exc:
         raise ActionParseError(f"Model output was not valid JSON: {exc}") from exc
-
-    index = end
-    while True:
-        while index < len(text) and text[index].isspace():
-            index += 1
-        if index >= len(text):
-            return payload
-        try:
-            extra_payload, extra_end = decoder.raw_decode(text, index)
-        except json.JSONDecodeError as exc:
-            raise ActionParseError(f"Model output was not valid JSON: {exc}") from exc
-        if extra_payload != payload:
-            try:
-                json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ActionParseError(f"Model output was not valid JSON: {exc}") from exc
-            raise ActionParseError("Model output contained multiple JSON objects.")
-        index = extra_end
+    return payload
 
 
 def parse_action(raw_text: str) -> ActionRequest:

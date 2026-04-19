@@ -332,6 +332,7 @@ def _normalize_openai_args_schema(schema: dict[str, Any]) -> dict[str, Any]:
         return normalized
 
     normalized["required"] = list(properties.keys())
+    normalized["additionalProperties"] = False
     for name, prop in properties.items():
         if not isinstance(prop, dict):
             continue

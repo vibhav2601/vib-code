@@ -76,6 +76,9 @@ class AgentLoop:
                 share_path = self._write_share_file(session)
                 print(f"Saved share JSON to {share_path}")
                 continue
+            if user_input == "/cwd":
+                print(Path(session.working_directory).resolve())
+                continue
 
             reply = self.run_turn(session, user_input)
             print_assistant(reply)
@@ -234,7 +237,7 @@ class AgentLoop:
                 action.action,
                 stdout=tool_result.stdout,
                 stderr=tool_result.stderr,
-                max_lines=None if action.action == "read_file" else 5,
+                max_lines=4 if action.action == "read_file" else 5,
             )
             trace.append(
                 session.session_id,
